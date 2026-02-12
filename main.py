@@ -163,7 +163,7 @@ def connect() -> pyodbc.Connection:
     )
     return pyodbc.connect(conn_str)
 
-def run_proc(cur, proc_key: str, m: dict, date_start: str, date_end: str) -> pd.DataFrame:
+def run_proc(cur, proc_key: str, m: dict, date_start: datetime, date_end: datetime) -> pd.DataFrame:
     sql = STORED_PROCS[proc_key]
     if proc_key == "revenue":
         params = (m["dbName"], int(m["groupNum"]), date_start, date_end)
@@ -283,13 +283,17 @@ def write_df(df: pd.DataFrame, out_path: str, metadata: dict, fetched_at: str):
 
     df.to_parquet(out_path, index=False)
 
-def process_and_save_payroll(cur, m: dict, date_start: str, date_end: str,
+def process_and_save_payroll(cur, m: dict, date_start: datetime, date_end: datetime,
                             outdir: str, fetched_at: str, active_payroll_date: str,
-                            error_collection: dict = None):
+                            error_collection: dict = None, date_str: str = None):
     resort = safe_name(m["resortName"])
 
+    # Use date_str for comparisons and file paths (if not provided, extract from datetime)
+    if date_str is None:
+        date_str = date_start.strftime("%Y-%m-%d")
+
     # Check if date is >= active payroll date
-    is_active = date_start >= active_payroll_date
+    is_active = date_str >= active_payroll_date
 
     try:
         if is_active:
@@ -312,16 +316,16 @@ def process_and_save_payroll(cur, m: dict, date_start: str, date_end: str,
             outdir,
             "proc=processed_payroll",
             f"resort={resort}",
-            f"date_start={date_start}",
-            f"date_end={date_end}",
+            f"date_start={date_str}",
+            f"date_end={date_str}",
         )
         out_path = os.path.join(base, "data.parquet")
 
         meta = {
             "proc": "processed_payroll",
             "resort": m["resortName"],
-            "date_start": date_start,
-            "date_end": date_end,
+            "date_start": date_str,
+            "date_end": date_str,
             "rowcount": str(len(processed_df)),
         }
 
@@ -332,7 +336,7 @@ def process_and_save_payroll(cur, m: dict, date_start: str, date_end: str,
         error_msg = {
             "error": "processed_payroll_failed",
             "resort": m["resortName"],
-            "date": date_start,
+            "date": date_str,
             "message": str(e)
         }
         print(json.dumps(error_msg))
@@ -341,7 +345,7 @@ def process_and_save_payroll(cur, m: dict, date_start: str, date_end: str,
         if error_collection is not None:
             error_collection["errors"].append({
                 "type": "payroll_processing_failure",
-                "date": date_start,
+                "date": date_str,
                 "resort": m["resortName"],
                 "error_message": str(e),
                 "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -510,6 +514,10 @@ def main():
             total_dates += 1
             date_str = date.strftime("%Y-%m-%d")
 
+            # Create datetime objects with specific times for SP calls
+            date_ini = datetime(date.year, date.month, date.day, 0, 0, 0)  # Start of day
+            date_end_dt = datetime(date.year, date.month, date.day, 23, 59, 59)  # End of day
+
             print(json.dumps({
                 "processing_date": date_str,
                 "date_count": total_dates
@@ -523,7 +531,7 @@ def main():
                 if proc_key == "revenue" and int(resort_config["groupNum"]) < 0:
                     continue
 
-                df = run_proc(cur, proc_key, resort_config, date_str, date_str)
+                df = run_proc(cur, proc_key, resort_config, date_ini, date_end_dt)
 
                 base = os.path.join(
                     outdir,
@@ -548,8 +556,8 @@ def main():
             payroll_procs = {"payroll", "payroll_salary", "payroll_history"}
             if payroll_procs & set(selected_procs):
                 process_and_save_payroll(
-                    cur, resort_config, date_str, date_str, outdir, fetched_at,
-                    active_payroll_date, error_collection
+                    cur, resort_config, date_ini, date_end_dt, outdir, fetched_at,
+                    active_payroll_date, error_collection, date_str
                 )
 
             # Upload to S3 with error handling
