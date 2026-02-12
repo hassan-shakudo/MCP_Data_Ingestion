@@ -48,9 +48,15 @@ def normalize_punchtime_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def sanitize_value(val):
-    if val is None or pd.isna(val) or np.isinf(val):
+    if val is None or pd.isna(val):
         return 0.0
-    return float(val)
+    try:
+        float_val = float(val)
+        if np.isinf(float_val):
+            return 0.0
+        return float_val
+    except (ValueError, TypeError):
+        return 0.0
 
 def get_season_bounds(date: datetime):
     year = date.year
@@ -230,7 +236,7 @@ def process_historical_payroll(df: pd.DataFrame) -> pd.DataFrame:
     for _, row in df.iterrows():
         dept_code = str(row.get("department", row.get("deptcode", ""))).strip()
         dept_title = str(row.get("DepartmentTitle", "")).strip()
-        total = sanitize_value(row.get("total", 0))
+        total = round(sanitize_value(row.get("total", 0)), 1)  # Round to 1 decimal place
 
         if dept_code:
             records.append({
@@ -262,7 +268,7 @@ def combine_payroll_totals(contract_totals: dict, salary_totals: dict,
     for dept_code in all_dept_codes:
         contract_total = contract_totals.get(dept_code, 0.0)
         salary_total = salary_totals.get(dept_code, 0.0)
-        final_payroll = contract_total + salary_total
+        final_payroll = round(contract_total + salary_total, 1)  # Round to 1 decimal place
 
         records.append({
             "departmentTitle": dept_titles.get(dept_code, ""),
@@ -316,16 +322,14 @@ def process_and_save_payroll(cur, m: dict, date_start: datetime, date_end: datet
             outdir,
             "proc=processed_payroll",
             f"resort={resort}",
-            f"date_start={date_str}",
-            f"date_end={date_str}",
+            f"date={date_str}",
         )
         out_path = os.path.join(base, "data.parquet")
 
         meta = {
             "proc": "processed_payroll",
             "resort": m["resortName"],
-            "date_start": date_str,
-            "date_end": date_str,
+            "date": date_str,
             "rowcount": str(len(processed_df)),
         }
 
@@ -537,16 +541,14 @@ def main():
                     outdir,
                     f"proc={proc_key}",
                     f"resort={resort}",
-                    f"date_start={date_str}",
-                    f"date_end={date_str}",
+                    f"date={date_str}",
                 )
                 out_path = os.path.join(base, "data.parquet")
 
                 meta = {
                     "proc": proc_key,
                     "resort": resort_config["resortName"],
-                    "date_start": date_str,
-                    "date_end": date_str,
+                    "date": date_str,
                     "rowcount": str(len(df)),
                 }
 

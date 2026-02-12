@@ -106,9 +106,9 @@ You can choose which data types to extract (see [Configuration](#configuration) 
    - Adds metadata columns:
      - `_meta_proc`: Which procedure was run
      - `_meta_resort`: Resort name
-     - `_meta_date_start`, `_meta_date_end`: Date range
+     - `_meta_date`: Date in YYYY-MM-DD format
      - `_meta_rowcount`: Number of records
-     - `fetchedAt`: When data was extracted
+     - `fetchedAt`: When data was extracted (UTC timestamp)
 
 7. **File Organization**
    - Structures files by: procedure → resort → date
@@ -278,19 +278,16 @@ Data is stored in a hierarchical structure optimized for analytics tools like Dr
 s3://your-bucket/mcp_parquet/
 ├── proc=revenue/
 │   └── resort=purgatory/
-│       └── date_start=2024-11-01/
-│           └── date_end=2024-11-01/
-│               └── part-000.parquet
+│       └── date=2024-11-01/
+│           └── data.parquet
 ├── proc=payroll/
 │   └── resort=purgatory/
-│       └── date_start=2024-11-01/
-│           └── date_end=2024-11-01/
-│               └── part-000.parquet
+│       └── date=2024-11-01/
+│           └── data.parquet
 ├── proc=processed_payroll/  ← Combined hourly + salary totals
 │   └── resort=purgatory/
-│       └── date_start=2024-11-01/
-│           └── date_end=2024-11-01/
-│               └── part-000.parquet
+│       └── date=2024-11-01/
+│           └── data.parquet
 ...
 ```
 
@@ -308,8 +305,7 @@ Every file includes these additional columns for tracking:
 ```
 _meta_proc          # Which procedure: "revenue", "payroll", etc.
 _meta_resort        # Resort name: "PURGATORY"
-_meta_date_start    # Start date: "2024-11-01"
-_meta_date_end      # End date: "2024-11-01"
+_meta_date          # Date: "2024-11-01"
 _meta_rowcount      # Number of records: "145"
 fetchedAt           # Extraction timestamp: "2024-11-01T15:30:00Z"
 ```
@@ -356,6 +352,8 @@ The pipeline uses `ACTIVE_PAYROLL_DATE` to determine processing method:
   - Uses today's date if UTC time >= 15:00
   - Uses yesterday's date if UTC time < 15:00
 - This 3 PM cutoff ensures complete daily data availability
+- **Stored procedure calls**: Include full datetime range (00:00:00 to 23:59:59 for each day)
+- **Metadata and folders**: Use simple date format (YYYY-MM-DD)
 
 #### Error Handling
 - **Database Retries**: Automatically retries failed database calls (3 attempts with 30s delay)
