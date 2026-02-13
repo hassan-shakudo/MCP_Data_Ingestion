@@ -47,6 +47,48 @@ def normalize_punchtime_cols(df: pd.DataFrame) -> pd.DataFrame:
                 df[col] = s.where(~pd.isna(s), pd.NA).astype("string")
     return df
 
+def normalize_date_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize Date columns to consistent string format (YYYY-MM-DD)"""
+    for col in df.columns:
+        if col.lower() == "date":
+            s = df[col]
+
+            # Handle datetime/timestamp types
+            if pd.api.types.is_datetime64_any_dtype(s):
+                df[col] = s.dt.strftime("%Y-%m-%d").astype(str)
+
+            # Handle integer dates (e.g., 20260203 format)
+            elif pd.api.types.is_integer_dtype(s):
+                try:
+                    # Convert integer YYYYMMDD to datetime then to string
+                    df[col] = pd.to_datetime(s, format='%Y%m%d', errors='coerce').dt.strftime("%Y-%m-%d").astype(str)
+                except:
+                    # If conversion fails, convert to string as-is
+                    df[col] = s.astype(str)
+
+            # Handle float dates (rare but possible)
+            elif pd.api.types.is_float_dtype(s):
+                try:
+                    # Try converting float to int first, then to date
+                    df[col] = pd.to_datetime(s.astype('Int64'), format='%Y%m%d', errors='coerce').dt.strftime("%Y-%m-%d").astype(str)
+                except:
+                    df[col] = s.astype(str)
+
+            # Handle object/string types
+            elif pd.api.types.is_object_dtype(s):
+                try:
+                    # Try to parse as datetime and standardize
+                    df[col] = pd.to_datetime(s, errors='coerce').dt.strftime("%Y-%m-%d").astype(str)
+                except:
+                    # If parsing fails, convert to string as-is
+                    df[col] = s.astype(str)
+
+            # For any other type, just convert to string
+            else:
+                df[col] = s.astype(str)
+
+    return df
+
 def sanitize_value(val):
     if val is None or pd.isna(val):
         return 0.0
@@ -281,6 +323,7 @@ def combine_payroll_totals(contract_totals: dict, salary_totals: dict,
 def write_df(df: pd.DataFrame, out_path: str, metadata: dict, fetched_at: str):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     df = normalize_punchtime_cols(df)
+    df = normalize_date_cols(df)
 
     for k, v in metadata.items():
         df[f"_meta_{k}"] = v
