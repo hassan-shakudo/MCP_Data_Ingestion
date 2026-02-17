@@ -575,9 +575,6 @@ def main():
             resort = safe_name(resort_config["resortName"])
 
             for proc_key in selected_procs:
-                if proc_key == "revenue" and int(resort_config["groupNum"]) < 0:
-                    continue
-
                 df = run_proc(cur, proc_key, resort_config, date_ini, date_end_dt)
 
                 base = os.path.join(
