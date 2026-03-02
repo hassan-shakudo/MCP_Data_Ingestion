@@ -22,8 +22,8 @@ STORED_PROCS = {
 
 def safe_name(s: str) -> str:
     s = s.strip().lower()
-    s = re.sub(r"[^a-z0-9]+", "_", s)
-    return s.strip("_")
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-")
 
 def cursor_to_df(cur) -> pd.DataFrame:
     cols = [c[0] for c in cur.description] if cur.description else []
@@ -371,7 +371,7 @@ def process_and_save_payroll(cur, m: dict, date_start: datetime, date_end: datet
 
         meta = {
             "proc": "processed_payroll",
-            "resort": m["resortName"],
+            "resort": resort,
             "date": date_str,
             "rowcount": str(len(processed_df)),
         }
@@ -587,7 +587,7 @@ def main():
 
                 meta = {
                     "proc": proc_key,
-                    "resort": resort_config["resortName"],
+                    "resort": resort,
                     "date": date_str,
                     "rowcount": str(len(df)),
                 }

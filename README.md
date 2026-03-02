@@ -304,7 +304,7 @@ Every file includes these additional columns for tracking:
 
 ```
 _meta_proc          # Which procedure: "revenue", "payroll", etc.
-_meta_resort        # Resort name: "PURGATORY"
+_meta_resort        # Resort name in kebab-case: "lee-canyon", "purgatory"
 _meta_date          # Date: "2024-11-01"
 _meta_rowcount      # Number of records: "145"
 fetchedAt           # Extraction timestamp: "2024-11-01T15:30:00Z"
