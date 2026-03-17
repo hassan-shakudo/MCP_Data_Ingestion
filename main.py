@@ -12,62 +12,55 @@ import boto3
 import requests
 
 # Shakudo secrets directory - secrets are mounted as files here
+# Shakudo mounts secrets at /etc/hyperplane/secrets/<secret_name_with_underscore>/<KEY>
+# For example: /etc/hyperplane/secrets/mcp_data_ingestion_secrets/MCP_DB_USERNAME
 SHAKUDO_SECRETS_DIR = Path("/etc/hyperplane/secrets")
 
-# Mapping from environment variable names to Shakudo secret file names
-# This allows code to use standard env var names while reading from Shakudo secrets
-ENV_TO_SECRET_MAP = {
-    "MCP_DB_USERNAME": "db-username",
-    "MCP_DB_PASSWORD": "db-password",
-    "MCP_DB_SERVER": "db-server",
-    "MCP_DB_PORT": "db-port",
-    "MCP_DB_NAME": "db-name",
-    "AWS_ACCESS_KEY_ID": "minio-access-key",
-    "AWS_SECRET_ACCESS_KEY": "minio-secret-key",
-    "MINIO_ENDPOINT": "minio-endpoint",
-    "MINIO_BUCKET": "minio-bucket",
-}
+# Combined secret name (dashes become underscores in mount path)
+SHAKUDO_SECRET_NAME = "mcp_data_ingestion_secrets"
 
 
 def get_secret(env_var: str, default: str = None) -> str:
     """
     Read a secret value with the following priority:
     1. Environment variable (for parameters passed to job)
-    2. Shakudo secret file at /etc/hyperplane/secrets/<secret_name>
-       (using ENV_TO_SECRET_MAP to translate env var name to secret name)
+    2. Shakudo secret file at /etc/hyperplane/secrets/<secret_name>/<KEY>
+       where KEY matches the env_var name exactly
     3. Default value (if provided)
 
-    Shakudo mounts secrets as files where the filename is the secret name
-    and the file content is the secret value.
+    Shakudo mounts combined secrets as directories where each key in the
+    K8s secret becomes a file. For example, a secret named 'mcp-data-ingestion-secrets'
+    with key 'MCP_DB_USERNAME' is mounted at:
+    /etc/hyperplane/secrets/mcp_data_ingestion_secrets/MCP_DB_USERNAME
     """
     # First try environment variable
     if env_var in os.environ:
         return os.environ[env_var]
 
     # Try reading from Shakudo secrets directory
+    # Path pattern: /etc/hyperplane/secrets/<secret_name_underscore>/<KEY>
+    secret_path = SHAKUDO_SECRETS_DIR / SHAKUDO_SECRET_NAME / env_var
+
+    if secret_path.exists() and secret_path.is_file():
+        try:
+            value = secret_path.read_text().strip()
+            if value:
+                return value
+        except Exception:
+            pass
+
+    # Also scan all subdirectories in case secret is in a different combined secret
     if SHAKUDO_SECRETS_DIR.exists():
-        # Get the secret file name - either from mapping or use env_var as-is
-        secret_name = ENV_TO_SECRET_MAP.get(env_var, env_var)
-        secret_path = SHAKUDO_SECRETS_DIR / secret_name
-
-        if secret_path.exists() and secret_path.is_file():
-            try:
-                value = secret_path.read_text().strip()
-                if value:
-                    return value
-            except Exception:
-                pass
-
-        # Also try the env_var name directly (in case secret is named same as env var)
-        if secret_name != env_var:
-            direct_path = SHAKUDO_SECRETS_DIR / env_var
-            if direct_path.exists() and direct_path.is_file():
-                try:
-                    value = direct_path.read_text().strip()
-                    if value:
-                        return value
-                except Exception:
-                    pass
+        for secret_dir in SHAKUDO_SECRETS_DIR.iterdir():
+            if secret_dir.is_dir():
+                key_path = secret_dir / env_var
+                if key_path.exists() and key_path.is_file():
+                    try:
+                        value = key_path.read_text().strip()
+                        if value:
+                            return value
+                    except Exception:
+                        pass
 
     if default is not None:
         return default
