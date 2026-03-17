@@ -14,16 +14,31 @@ import requests
 # Shakudo secrets directory - secrets are mounted as files here
 SHAKUDO_SECRETS_DIR = Path("/etc/hyperplane/secrets")
 
+# Mapping from environment variable names to Shakudo secret file names
+# This allows code to use standard env var names while reading from Shakudo secrets
+ENV_TO_SECRET_MAP = {
+    "MCP_DB_USERNAME": "db-username",
+    "MCP_DB_PASSWORD": "db-password",
+    "MCP_DB_SERVER": "db-server",
+    "MCP_DB_PORT": "db-port",
+    "MCP_DB_NAME": "db-name",
+    "AWS_ACCESS_KEY_ID": "minio-access-key",
+    "AWS_SECRET_ACCESS_KEY": "minio-secret-key",
+    "MINIO_ENDPOINT": "minio-endpoint",
+    "MINIO_BUCKET": "minio-bucket",
+}
+
 
 def get_secret(env_var: str, default: str = None) -> str:
     """
     Read a secret value with the following priority:
     1. Environment variable (for parameters passed to job)
-    2. Shakudo secret file at /etc/hyperplane/secrets/<env_var>
+    2. Shakudo secret file at /etc/hyperplane/secrets/<secret_name>
+       (using ENV_TO_SECRET_MAP to translate env var name to secret name)
     3. Default value (if provided)
 
     Shakudo mounts secrets as files where the filename is the secret name
-    and content structure varies. We try to read the value matching env_var key.
+    and the file content is the secret value.
     """
     # First try environment variable
     if env_var in os.environ:
@@ -31,27 +46,28 @@ def get_secret(env_var: str, default: str = None) -> str:
 
     # Try reading from Shakudo secrets directory
     if SHAKUDO_SECRETS_DIR.exists():
-        # Secrets are mounted as files, try to find one containing our key
-        for secret_file in SHAKUDO_SECRETS_DIR.iterdir():
-            if secret_file.is_file():
-                try:
-                    content = secret_file.read_text().strip()
-                    # If the file name matches a secret that contains our env var as key
-                    # The secret file contains the value directly
-                    if secret_file.name == env_var:
-                        return content
-                    # Also check if secret file content is the value we need
-                    # (for secrets where key matches env_var name)
-                except Exception:
-                    continue
+        # Get the secret file name - either from mapping or use env_var as-is
+        secret_name = ENV_TO_SECRET_MAP.get(env_var, env_var)
+        secret_path = SHAKUDO_SECRETS_DIR / secret_name
 
-        # Direct file read - secret file named after the env var
-        direct_path = SHAKUDO_SECRETS_DIR / env_var
-        if direct_path.exists():
+        if secret_path.exists() and secret_path.is_file():
             try:
-                return direct_path.read_text().strip()
+                value = secret_path.read_text().strip()
+                if value:
+                    return value
             except Exception:
                 pass
+
+        # Also try the env_var name directly (in case secret is named same as env var)
+        if secret_name != env_var:
+            direct_path = SHAKUDO_SECRETS_DIR / env_var
+            if direct_path.exists() and direct_path.is_file():
+                try:
+                    value = direct_path.read_text().strip()
+                    if value:
+                        return value
+                except Exception:
+                    pass
 
     if default is not None:
         return default
