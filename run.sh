@@ -32,32 +32,15 @@ echo "Starting data ingestion pipeline..."
 : "${OUTDIR:=/work/out}"
 
 export AWS_EC2_METADATA_DISABLED=true
-
 mkdir -p "${OUTDIR}"
 
-echo "Installing OS dependencies (msodbcsql18 + unixODBC)..."
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y --no-install-recommends \
-  curl ca-certificates gnupg apt-transport-https \
-  unixodbc unixodbc-dev
+if ! command -v odbcinst >/dev/null 2>&1 || ! odbcinst -q -d | grep -q "ODBC Driver 18"; then
+  echo "ERROR: ODBC Driver 18 for SQL Server is not available in the runtime image."
+  echo "Please use the prebuilt Data Ingestion runtime image/environment config."
+  exit 1
+fi
 
-. /etc/os-release
-DEBIAN_VER="${VERSION_ID}"
-echo "Debian VERSION_ID=${DEBIAN_VER}"
-
-curl -fsSL "https://packages.microsoft.com/config/debian/${DEBIAN_VER}/packages-microsoft-prod.deb" \
-  -o /tmp/packages-microsoft-prod.deb
-dpkg -i /tmp/packages-microsoft-prod.deb
-rm -f /tmp/packages-microsoft-prod.deb
-
-apt-get update -y
-ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18
-
-echo "Installing Python dependencies..."
-python -m pip install --no-cache-dir -U pip
-python -m pip install --no-cache-dir pyodbc pandas pyarrow boto3 numpy requests
-
+echo "Runtime image dependencies detected; skipping apt/pip installation."
 echo "*********** Starting data pipeline ***********"
 python "$(dirname "$0")/main.py"
 
